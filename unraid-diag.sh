@@ -10,6 +10,67 @@ HOST="$(hostname)"
 WORK="$OUTROOT/${HOST}-${STAMP}"
 ARCHIVE="$OUTROOT/${HOST}-${STAMP}.tar.gz"
 
+array_device_map()
+{
+    mdcmd status 2>/dev/null |
+    awk -F= '
+        /^rdevName\.[0-9]+=/ {
+            slot=$1
+            sub(/^rdevName\./,"",slot)
+            if ($2 != "") print slot "|" $2
+        }
+    ' |
+    sort -t'|' -k1,1n
+}
+
+role_for_slot()
+{
+    if [ "$1" -eq 0 ]; then
+        printf 'parity'
+    else
+        printf 'disk%s' "$1"
+    fi
+}
+
+is_array_device()
+{
+    array_device_map | awk -F'|' -v device="$1" '$2 == device { found=1 } END { exit !found }'
+}
+
+non_array_ssd_devices()
+{
+    while read -r NAME TYPE ROTA
+    do
+        [ "$TYPE" = "disk" ] || continue
+        [ "$ROTA" = "0" ] || continue
+
+        case "$NAME" in
+            nvme*) continue ;;
+        esac
+
+        is_array_device "$NAME" && continue
+        printf '%s\n' "$NAME"
+    done < <(lsblk -dn -o NAME,TYPE,ROTA 2>/dev/null)
+}
+
+smart_snapshot()
+{
+    ROLE="$1"
+    DEVICE="$2"
+    INFO="$(smartctl -i -n standby "$DEVICE" 2>&1)"
+    SERIAL="$(echo "$INFO" | awk -F: '/Serial Number:/ {sub(/^[ \t]+/,"",$2); print $2; exit}')"
+    [ -n "$SERIAL" ] || SERIAL="unknown"
+    SAFE_SERIAL="$(printf '%s' "$SERIAL" | tr -c 'A-Za-z0-9._-' '_')"
+
+    {
+        echo "Role: $ROLE"
+        echo "Device: $DEVICE"
+        echo "Serial: $SERIAL"
+        echo
+        smartctl -n standby -x "$DEVICE"
+    } > "$WORK/smart/${ROLE}-${SAFE_SERIAL}.txt" 2>&1
+}
+
 mkdir -p "$WORK"
 
 echo
@@ -173,14 +234,17 @@ echo "[6/9] Storage health..."
 
 mkdir -p "$WORK/smart"
 
-for DEV in sdc sdd sde sdf sdg sdh sdj
+while IFS='|' read -r SLOT DEV
 do
-    smartctl -n standby -x "/dev/$DEV" \
-        > "$WORK/smart/$DEV.txt" 2>&1
-done
+    [ -b "/dev/$DEV" ] || continue
+    smart_snapshot "$(role_for_slot "$SLOT")" "/dev/$DEV"
+done < <(array_device_map)
 
-smartctl -x /dev/sdi \
-    > "$WORK/smart/sdi.txt" 2>&1
+while read -r DEV
+do
+    [ -b "/dev/$DEV" ] || continue
+    smart_snapshot "ssd" "/dev/$DEV"
+done < <(non_array_ssd_devices)
 
 nvme smart-log /dev/nvme0 \
     > "$WORK/smart/nvme0-smart.txt" 2>&1

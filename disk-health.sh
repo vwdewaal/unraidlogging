@@ -5,6 +5,49 @@ DATE="$(date '+%Y-%m-%d')"
 NOW="$(date '+%Y-%m-%d %H:%M:%S')"
 LOGFILE="$LOGROOT/$DATE.log"
 
+array_device_map()
+{
+    mdcmd status 2>/dev/null |
+    awk -F= '
+        /^rdevName\.[0-9]+=/ {
+            slot=$1
+            sub(/^rdevName\./,"",slot)
+            if ($2 != "") print slot "|" $2
+        }
+    ' |
+    sort -t'|' -k1,1n
+}
+
+role_for_slot()
+{
+    if [ "$1" -eq 0 ]; then
+        printf 'parity'
+    else
+        printf 'disk%s' "$1"
+    fi
+}
+
+is_array_device()
+{
+    array_device_map | awk -F'|' -v device="$1" '$2 == device { found=1 } END { exit !found }'
+}
+
+non_array_ssd_devices()
+{
+    while read -r NAME TYPE ROTA
+    do
+        [ "$TYPE" = "disk" ] || continue
+        [ "$ROTA" = "0" ] || continue
+
+        case "$NAME" in
+            nvme*) continue ;;
+        esac
+
+        is_array_device "$NAME" && continue
+        printf '%s\n' "$NAME"
+    done < <(lsblk -dn -o NAME,TYPE,ROTA 2>/dev/null)
+}
+
 mkdir -p "$LOGROOT"
 
 {
@@ -17,21 +60,31 @@ mkdir -p "$LOGROOT"
     echo
     echo "### ARRAY HDD SMART SUMMARY ###########################################"
 
-    for DEV in sdc sdd sde sdf sdg sdh sdj
+    while IFS='|' read -r SLOT DEV
     do
-        echo
-        echo "---- /dev/$DEV --------------------------------------------------------"
-        echo "======================================================================"
+        [ -b "/dev/$DEV" ] || continue
+        ROLE="$(role_for_slot "$SLOT")"
 
+        echo
+        echo "---- $ROLE (/dev/$DEV) ------------------------------------------------"
+        echo "======================================================================"
 
         # -n standby prevents waking a sleeping disk.
         smartctl -n standby -H -A -i "/dev/$DEV" 2>&1
-    done
+    done < <(array_device_map)
 
     echo
-    echo "### SATA SSD ##########################################################"
+    echo "### NON-ARRAY SATA SSD ################################################"
 
-    smartctl -H -A -i /dev/sdi 2>&1
+    while read -r DEV
+    do
+        [ -b "/dev/$DEV" ] || continue
+
+        echo
+        echo "---- /dev/$DEV --------------------------------------------------------"
+        echo "======================================================================"
+        smartctl -H -A -i "/dev/$DEV" 2>&1
+    done < <(non_array_ssd_devices)
 
     echo
     echo "### NVME ##############################################################"
@@ -51,13 +104,21 @@ mkdir -p "$LOGROOT"
     echo
     echo "### BLOCK DEVICE ERROR COUNTERS #######################################"
 
-    for DEV in sdc sdd sde sdf sdg sdh sdj sdi
+    while IFS='|' read -r SLOT DEV
     do
         if [ -r "/sys/block/$DEV/stat" ]; then
-            printf "%-8s " "$DEV"
+            printf "%-8s %-12s " "$(role_for_slot "$SLOT")" "/dev/$DEV"
             cat "/sys/block/$DEV/stat"
         fi
-    done
+    done < <(array_device_map)
+
+    while read -r DEV
+    do
+        if [ -r "/sys/block/$DEV/stat" ]; then
+            printf "%-8s %-12s " "ssd" "/dev/$DEV"
+            cat "/sys/block/$DEV/stat"
+        fi
+    done < <(non_array_ssd_devices)
 
     echo
     echo "### NVME ERROR LOG ####################################################"
