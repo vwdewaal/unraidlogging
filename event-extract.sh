@@ -5,6 +5,14 @@ OUTDIR="/mnt/user/system-logs/events"
 OUTFILE="$OUTDIR/critical-events.log"
 STATE="/tmp/unraid-event-extract.offset"
 
+logs_root_ready()
+{
+    mdcmd status 2>/dev/null | grep -qx 'mdState=STARTED' || return 1
+    grep -qs '[[:space:]]/mnt/user[[:space:]]fuse\.shfs[[:space:]]' /proc/mounts
+}
+
+logs_root_ready || exit 0
+
 mkdir -p "$OUTDIR"
 
 [ -f "$SYSLOG" ] || exit 0

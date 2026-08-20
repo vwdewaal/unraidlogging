@@ -7,6 +7,14 @@ HOST="$(hostname)"
 LOGFILE="$LOGROOT/$DATE.log"
 LOCKDIR="/tmp/unraid-blackbox.lock"
 
+logs_root_ready()
+{
+    mdcmd status 2>/dev/null | grep -qx 'mdState=STARTED' || return 1
+    grep -qs '[[:space:]]/mnt/user[[:space:]]fuse\.shfs[[:space:]]' /proc/mounts
+}
+
+logs_root_ready || exit 0
+
 mkdir -p "$LOGROOT"
 
 # Prevent overlapping runs.

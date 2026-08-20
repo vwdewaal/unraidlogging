@@ -10,6 +10,12 @@ HOST="$(hostname)"
 WORK="$OUTROOT/${HOST}-${STAMP}"
 ARCHIVE="$OUTROOT/${HOST}-${STAMP}.tar.gz"
 
+logs_root_ready()
+{
+    mdcmd status 2>/dev/null | grep -qx 'mdState=STARTED' || return 1
+    grep -qs '[[:space:]]/mnt/user[[:space:]]fuse\.shfs[[:space:]]' /proc/mounts
+}
+
 array_device_map()
 {
     mdcmd status 2>/dev/null |
@@ -70,6 +76,11 @@ smart_snapshot()
         smartctl -n standby -x "$DEVICE"
     } > "$WORK/smart/${ROLE}-${SAFE_SERIAL}.txt" 2>&1
 }
+
+if ! logs_root_ready; then
+    echo "User-share mount is unavailable; diagnostics were not written."
+    exit 0
+fi
 
 mkdir -p "$WORK"
 

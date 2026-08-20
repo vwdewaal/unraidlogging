@@ -6,6 +6,14 @@ NOW="$(date '+%Y-%m-%d %H:%M:%S')"
 DIR="$ROOT/$DATE"
 LOCKDIR="/tmp/unraid-daily-snapshot.lock"
 
+logs_root_ready()
+{
+    mdcmd status 2>/dev/null | grep -qx 'mdState=STARTED' || return 1
+    grep -qs '[[:space:]]/mnt/user[[:space:]]fuse\.shfs[[:space:]]' /proc/mounts
+}
+
+logs_root_ready || exit 0
+
 mkdir -p "$DIR"
 
 if ! mkdir "$LOCKDIR" 2>/dev/null; then

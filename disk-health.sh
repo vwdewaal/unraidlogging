@@ -5,6 +5,12 @@ DATE="$(date '+%Y-%m-%d')"
 NOW="$(date '+%Y-%m-%d %H:%M:%S')"
 LOGFILE="$LOGROOT/$DATE.log"
 
+logs_root_ready()
+{
+    mdcmd status 2>/dev/null | grep -qx 'mdState=STARTED' || return 1
+    grep -qs '[[:space:]]/mnt/user[[:space:]]fuse\.shfs[[:space:]]' /proc/mounts
+}
+
 array_device_map()
 {
     mdcmd status 2>/dev/null |
@@ -47,6 +53,8 @@ non_array_ssd_devices()
         printf '%s\n' "$NAME"
     done < <(lsblk -dn -o NAME,TYPE,ROTA 2>/dev/null)
 }
+
+logs_root_ready || exit 0
 
 mkdir -p "$LOGROOT"
 
