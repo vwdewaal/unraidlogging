@@ -7,6 +7,7 @@ OUTDIR="/mnt/user/system-logs/events"
 OUTFILE="$OUTDIR/critical-events.log"
 STATE="/tmp/unraid-event-extract.offset"
 MIGRATION_MARKER="$OUTDIR/.event-extractor-live-syslog-v1"
+FILTER_MARKER="$OUTDIR/.event-extractor-filter-v2"
 
 logs_root_ready()
 {
@@ -29,6 +30,17 @@ if [ ! -f "$MIGRATION_MARKER" ]; then
     fi
     : > "$OUTFILE"
     touch "$MIGRATION_MARKER"
+fi
+
+# Version 1 of the live filter was intentionally broad and recorded harmless
+# boot-time link messages plus DEBUG lines containing the substring "BUG:".
+# Keep that first capture for reference and begin a clean, useful alert stream.
+if [ ! -f "$FILTER_MARKER" ]; then
+    if [ -s "$OUTFILE" ]; then
+        mv "$OUTFILE" "$OUTDIR/critical-events.pre-filter-v2-$(date '+%Y%m%d-%H%M%S').log"
+    fi
+    : > "$OUTFILE"
+    touch "$FILTER_MARKER"
 fi
 
 LINES=$(wc -l < "$SYSLOG")
@@ -56,7 +68,7 @@ START=$((LAST + 1))
 if [ "$START" -le "$LINES" ]; then
     sed -n "${START},${LINES}p" "$SYSLOG" |
     grep -Ei \
-'oom|out of memory|killed process|oom-kill|segfault|general protection fault|machine check|mce:|hardware error|watchdog|soft lockup|hard lockup|hung task|blocked for more than|kernel panic|call trace|BUG:|I/O error|buffer I/O error|blk_update_request|ata[0-9].*(error|failed|reset|timeout|link is slow|exception)|SATA link down|hard resetting link|softreset failed|failed command|uncorrectable|CRC error|nvme.*(error|reset|timeout|abort|failed)|XFS.*(error|corrupt|shutdown)|BTRFS.*(error|corrupt|failed)|ZFS.*(fault|degrad|error|checksum)|zpool.*(fault|degrad)|md.*error|disk.*error|read error|write error|filesystem error|FAT-fs.*error|usb.*disconnect|USB disconnect|link.*down|link.*up|NIC.*error|NETDEV WATCHDOG|r8169.*(error|down|reset)|docker.*(oom|die|kill|restart|error)|thermal.*(warning|critical)|temperature.*(critical|warning)' \
+'oom|out of memory|killed process|oom-kill|segfault|general protection fault|machine check|mce:|hardware error|watchdog|soft lockup|hard lockup|hung task|blocked for more than|kernel panic|call trace|\bBUG:|I/O error|buffer I/O error|blk_update_request|ata[0-9].*(error|failed|reset|timeout|link is slow|exception)|SATA link down|hard resetting link|softreset failed|failed command|uncorrectable|CRC error|nvme.*(error|reset|timeout|abort|failed)|XFS.*(error|corrupt|shutdown)|BTRFS.*(error|corrupt|failed)|ZFS.*(fault|degrad|error|checksum)|zpool.*(fault|degrad)|md.*error|disk.*error|read error|write error|filesystem error|FAT-fs.*error|usb.*disconnect|USB disconnect|NIC.*error|NETDEV WATCHDOG|r8169.*(error|down|reset)|docker.*(oom|die|kill|restart|error)|thermal.*(warning|critical)|temperature.*(critical|warning)' \
     >> "$OUTFILE"
 fi
 
