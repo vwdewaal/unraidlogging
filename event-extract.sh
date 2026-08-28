@@ -1,9 +1,12 @@
 #!/bin/bash
 
-SYSLOG="/mnt/user/system-logs/syslog-Tower.log"
+# Unraid keeps its active syslog in RAM.  Read it directly so event capture
+# continues without requiring rsyslog to write continuously to /mnt/user.
+SYSLOG="/var/log/syslog"
 OUTDIR="/mnt/user/system-logs/events"
 OUTFILE="$OUTDIR/critical-events.log"
 STATE="/tmp/unraid-event-extract.offset"
+MIGRATION_MARKER="$OUTDIR/.event-extractor-live-syslog-v1"
 
 logs_root_ready()
 {
@@ -17,21 +20,34 @@ mkdir -p "$OUTDIR"
 
 [ -f "$SYSLOG" ] || exit 0
 
-LINES=$(wc -l < "$SYSLOG")
-
-if [ ! -f "$STATE" ]; then
-    echo "$LINES" > "$STATE"
-    exit 0
+# The previous extractor read a persistent rsyslog file which is no longer
+# updated.  Preserve its historical entries once, then start a clean stream of
+# live events so health reports do not keep warning about stale incidents.
+if [ ! -f "$MIGRATION_MARKER" ]; then
+    if [ -s "$OUTFILE" ]; then
+        mv "$OUTFILE" "$OUTDIR/critical-events.pre-live-syslog-$(date '+%Y%m%d-%H%M%S').log"
+    fi
+    : > "$OUTFILE"
+    touch "$MIGRATION_MARKER"
 fi
 
-LAST=$(cat "$STATE" 2>/dev/null)
+LINES=$(wc -l < "$SYSLOG")
+SOURCE_ID=$(stat -c '%d:%i' "$SYSLOG" 2>/dev/null)
+
+LAST_SOURCE_ID=""
+LAST=0
+
+if [ -f "$STATE" ]; then
+    read -r LAST_SOURCE_ID LAST < "$STATE"
+fi
 
 case "$LAST" in
     ''|*[!0-9]*) LAST=0 ;;
 esac
 
-# Syslog rotated/truncated
-if [ "$LINES" -lt "$LAST" ]; then
+# Process a fresh syslog from its beginning. /tmp is cleared at boot, so this
+# records relevant messages from the current boot once the extractor runs.
+if [ "$SOURCE_ID" != "$LAST_SOURCE_ID" ] || [ "$LINES" -lt "$LAST" ]; then
     LAST=0
 fi
 
@@ -44,7 +60,7 @@ if [ "$START" -le "$LINES" ]; then
     >> "$OUTFILE"
 fi
 
-echo "$LINES" > "$STATE"
+printf '%s %s\n' "$SOURCE_ID" "$LINES" > "$STATE"
 
 # Keep event file manageable.
 if [ -f "$OUTFILE" ] && [ "$(stat -c %s "$OUTFILE")" -gt 52428800 ]; then
