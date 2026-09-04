@@ -517,8 +517,8 @@ send_health_trap()
         "$SNMP_TRAP_HOST:$SNMP_TRAP_PORT" '' \
         1.3.6.1.4.1.8072.2.3.0.1 \
         1.3.6.1.2.1.1.5.0 s "$(hostname)" \
-        1.3.6.1.4.1.8072.2.3.2.1 s "$HEALTH_STATUS" \
-        1.3.6.1.4.1.8072.2.3.2.2 s "$SUMMARY"; then
+        1.3.6.1.4.1.8072.999.1.1.0 s "$HEALTH_STATUS" \
+        1.3.6.1.4.1.8072.999.1.2.0 s "$SUMMARY"; then
         printf '%s\n' "$HEALTH_STATUS" > "$SNMP_STATE"
         logger -t unraid-health "$SUMMARY; SNMP trap sent"
     else
