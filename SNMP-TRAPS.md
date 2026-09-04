@@ -26,6 +26,8 @@ chmod 600 /boot/config/system-logging/snmp-trap.conf
 ```
 
 Edit the two passphrases. They must exactly match the Mac mini receiver.
+Leave `SNMP_TRAP_ENGINE_ID` at its supplied value; it identifies Tower as the
+SNMPv3 notification sender.
 
 Run `/boot/config/system-logging/unraid-health.sh` hourly. Its first successful
 run sends the current state as a baseline; later runs send only changed states.
@@ -38,10 +40,11 @@ Install Homebrew Net-SNMP:
 brew install net-snmp
 ```
 
-Create `~/.snmp/snmptrapd.conf` with the same values:
+Create `~/.snmp/snmptrapd.conf` with the same values. The `-e` Engine ID must
+match `SNMP_TRAP_ENGINE_ID` on Tower:
 
 ```conf
-createUser unraid-health SHA "AUTH_PASSPHRASE" AES "PRIVACY_PASSPHRASE"
+createUser -e 0x80001f8880546f776572 unraid-health SHA "AUTH_PASSPHRASE" AES "PRIVACY_PASSPHRASE"
 authUser log,execute,net unraid-health priv
 ```
 

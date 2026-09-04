@@ -10,3 +10,5 @@ SNMP_TRAP_AUTH_PROTOCOL="SHA"
 SNMP_TRAP_AUTH_PASSWORD="replace-with-a-long-unique-passphrase"
 SNMP_TRAP_PRIV_PROTOCOL="AES"
 SNMP_TRAP_PRIV_PASSWORD="replace-with-a-different-long-unique-passphrase"
+# Must match the Engine ID in the Mac mini's createUser directive.
+SNMP_TRAP_ENGINE_ID="0x80001f8880546f776572"

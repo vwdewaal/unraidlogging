@@ -498,6 +498,7 @@ send_health_trap()
     : "${SNMP_TRAP_PRIV_PASSWORD:=}"
     : "${SNMP_TRAP_AUTH_PROTOCOL:=SHA}"
     : "${SNMP_TRAP_PRIV_PROTOCOL:=AES}"
+    : "${SNMP_TRAP_ENGINE_ID:=0x80001f8880546f776572}"
 
     if [ -z "$SNMP_TRAP_HOST" ] || [ -z "$SNMP_TRAP_USER" ] || \
        [ -z "$SNMP_TRAP_AUTH_PASSWORD" ] || [ -z "$SNMP_TRAP_PRIV_PASSWORD" ]; then
@@ -511,6 +512,7 @@ send_health_trap()
     SUMMARY="Unraid health changed from ${PREVIOUS_STATUS:-unknown} to $HEALTH_STATUS (pass=$PASS warn=$WARN fail=$FAIL)"
 
     if snmptrap -v 3 -l authPriv \
+        -e "$SNMP_TRAP_ENGINE_ID" \
         -u "$SNMP_TRAP_USER" \
         -a "$SNMP_TRAP_AUTH_PROTOCOL" -A "$SNMP_TRAP_AUTH_PASSWORD" \
         -x "$SNMP_TRAP_PRIV_PROTOCOL" -X "$SNMP_TRAP_PRIV_PASSWORD" \
