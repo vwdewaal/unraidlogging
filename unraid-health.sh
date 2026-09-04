@@ -457,14 +457,75 @@ echo
 if [ "$FAIL" -gt 0 ]; then
     echo "OVERALL STATUS: FAIL"
     EXIT=2
+    HEALTH_STATUS="FAIL"
 elif [ "$WARN" -gt 0 ]; then
     echo "OVERALL STATUS: WARN"
     EXIT=1
+    HEALTH_STATUS="WARN"
 else
     echo "OVERALL STATUS: PASS"
     EXIT=0
+    HEALTH_STATUS="PASS"
 fi
 
 echo
+
+########################################################################
+# OPTIONAL SNMP STATE-CHANGE TRAP
+########################################################################
+
+# This is deliberately opt-in. Keep credentials in the protected, untracked
+# config file on the flash drive, never in this Git repository.
+SNMP_CONFIG="/boot/config/system-logging/snmp-trap.conf"
+SNMP_STATE="/boot/config/system-logging/.health-trap-state"
+
+send_health_trap()
+{
+    [ -r "$SNMP_CONFIG" ] || return 0
+
+    if ! command -v snmptrap >/dev/null 2>&1; then
+        logger -t unraid-health "SNMP traps enabled but snmptrap is unavailable"
+        return 0
+    fi
+
+    # shellcheck disable=SC1090
+    . "$SNMP_CONFIG"
+
+    : "${SNMP_TRAP_HOST:=}"
+    : "${SNMP_TRAP_PORT:=162}"
+    : "${SNMP_TRAP_USER:=}"
+    : "${SNMP_TRAP_AUTH_PASSWORD:=}"
+    : "${SNMP_TRAP_PRIV_PASSWORD:=}"
+    : "${SNMP_TRAP_AUTH_PROTOCOL:=SHA}"
+    : "${SNMP_TRAP_PRIV_PROTOCOL:=AES}"
+
+    if [ -z "$SNMP_TRAP_HOST" ] || [ -z "$SNMP_TRAP_USER" ] || \
+       [ -z "$SNMP_TRAP_AUTH_PASSWORD" ] || [ -z "$SNMP_TRAP_PRIV_PASSWORD" ]; then
+        logger -t unraid-health "SNMP trap config is incomplete"
+        return 0
+    fi
+
+    PREVIOUS_STATUS="$(cat "$SNMP_STATE" 2>/dev/null)"
+    [ "$HEALTH_STATUS" = "$PREVIOUS_STATUS" ] && return 0
+
+    SUMMARY="Unraid health changed from ${PREVIOUS_STATUS:-unknown} to $HEALTH_STATUS (pass=$PASS warn=$WARN fail=$FAIL)"
+
+    if snmptrap -v 3 -l authPriv \
+        -u "$SNMP_TRAP_USER" \
+        -a "$SNMP_TRAP_AUTH_PROTOCOL" -A "$SNMP_TRAP_AUTH_PASSWORD" \
+        -x "$SNMP_TRAP_PRIV_PROTOCOL" -X "$SNMP_TRAP_PRIV_PASSWORD" \
+        "$SNMP_TRAP_HOST:$SNMP_TRAP_PORT" '' \
+        1.3.6.1.4.1.8072.2.3.0.1 \
+        1.3.6.1.2.1.1.5.0 s "$(hostname)" \
+        1.3.6.1.4.1.8072.2.3.2.1 s "$HEALTH_STATUS" \
+        1.3.6.1.4.1.8072.2.3.2.2 s "$SUMMARY"; then
+        printf '%s\n' "$HEALTH_STATUS" > "$SNMP_STATE"
+        logger -t unraid-health "$SUMMARY; SNMP trap sent"
+    else
+        logger -t unraid-health "$SUMMARY; SNMP trap failed"
+    fi
+}
+
+send_health_trap
 
 exit "$EXIT"
